@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Directory Tree Viewer</title>
+  <style>
+    :root {
+      --bg: #1e1e2f;
+      --fg: #c7c7d9;
+      --accent: #5c6bc0;
+      --radius: 0.5rem;
+      --font-main: 'Segoe UI', sans-serif;
+      --font-mono: 'Consolas', monospace;
+      --font-size-mono: 0.9rem; /* Default size */
+
+      --popup-bg: #3c4261;
+      --popup-fg: #f0f0f0;
+      --popup-radius: 0.8rem;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-main);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      position: relative;
+      overflow: hidden;
+    }
+    header {
+      padding: 1rem 2rem;
+      background: rgba(0,0,0,0.2);
+      z-index: 10;
+      font-size: 1.5rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    }
+    #controls {
+      padding: 1rem 2rem;
+      background: rgba(0,0,0,0.15);
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #3f51b5;
+    }
+    input[type="range"] {
+      width: 100px;
+      padding: 0.6rem;
+      cursor: pointer;
+    }
+    #counts {
+      margin-left: auto;
+      display: flex;
+      gap: 1rem;
+    }
+    #tree-container {
+      position: relative;
+      flex: 1;
+      overflow: auto;
+      padding: 1rem 2rem;
+    }
+    pre {
+      font-family: var(--font-mono);
+      font-size: var(--font-size-mono); /* Use variable */
+      line-height: 1.4;
+      white-space: pre; /* Allow user selection/deletion */
+      overflow-x: auto;
+      /* Allow editing for deleting lines */
+      /* NOTE: Might need careful handling if more complex interaction is added later */
+      /* min-height: 5em; /* Ensure it has some height even when empty */
+    }
+    pre:focus {
+        outline: 1px solid var(--accent); /* Indicate focus when editing */
+    }
+
+    .loader {
+      border: 8px solid rgba(255,255,255,0.1);
+      border-top-color: var(--accent); /* Use shorthand */
+      border-radius: 50%;
+      width: 60px;
+      height: 60px;
+      animation: spin 1s linear infinite;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      display: none;
+      z-index: 20;
+    }
+    @keyframes spin {
+      100% {
+        transform: translate(-50%, -50%) rotate(360deg);
+      }
+    }
+    .popup {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(150%);
+      background: var(--popup-bg);
+      color: var(--popup-fg);
+      padding: 0.8rem 1.5rem;
+      border-radius: var(--popup-radius);
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.3s ease, transform 0.4s ease;
+      font-size: 0.95rem;
+      font-weight: 500;
+      pointer-events: none;
+    }
+    .popup.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <header>Directory Tree Viewer</header>
+  <div id="controls">
+    <button id="selectBtn">Select Directory</button>
+    <button id="copyBtn">Copy</button>
+    <label for="fontSlider">Size</label>
+    <input id="fontSlider" type="range" min="0.5" max="2" step="0.1" value="0.9">
+    <div id="counts">
+      <span id="dirCount">Dirs: 0</span>
+      <span id="fileCount">Files: 0</span>
+    </div>
+    <input type="file" id="fileInput" webkitdirectory multiple hidden>
+  </div>
+  <div id="tree-container">
+    <div class="loader" id="loader"></div>
+    <!-- Added contenteditable="true" -->
+    <pre id="treeOutput" contenteditable="true" spellcheck="false">Select a directory...</pre>
+  </div>
+  <div id="copyPopup" class="popup">Copied!</div>
+
+  <script>
+    const excluded = new Set([ '.git', '.vs', '.vscode', '.idea', 'node_modules', '.next', '.nuxt', 'dist', 'build', '__pycache__', '.pytest_cache', '.cache', 'venv', '.venv' ]);
+    const selectBtn = document.getElementById('selectBtn');
+    const copyBtn = document.getElementById('copyBtn');
+    const fontSlider = document.getElementById('fontSlider');
+    const fileInput = document.getElementById('fileInput');
+    const treeOutput = document.getElementById('treeOutput');
+    const dirCountEl = document.getElementById('dirCount');
+    const fileCountEl = document.getElementById('fileCount');
+    const loader = document.getElementById('loader');
+    const copyPopup = document.getElementById('copyPopup');
+    let popupTimeout = null;
+
+    const setCounts = (dirs, files) => {
+      dirCountEl.textContent = 'Dirs: ' + dirs;
+      fileCountEl.textContent = 'Files: ' + files;
+    };
+
+    const displayTree = (lines, dirs, files) => {
+      loader.style.display = 'none';
+      treeOutput.textContent = lines.join('\n'); // Set text content
+      setCounts(dirs, files);
+    };
+
+    const toggleLoader = (show) => {
+        loader.style.display = show ? 'block' : 'none';
+        if (show) {
+            treeOutput.textContent = ''; // Clear content when loading
+            setCounts(0, 0);
+        }
+    };
+
+    fontSlider.addEventListener('input', (e) => {
+      document.documentElement.style.setProperty('--font-size-mono', e.target.value + 'rem');
+    });
+
+    copyBtn.addEventListener('click', () => {
+      // Always read textContent for copying, even if editable
+      const text = treeOutput.textContent;
+      if (!text || text === 'Select a directory...') return;
+      navigator.clipboard.writeText(text).then(() => {
+        if (popupTimeout) clearTimeout(popupTimeout);
+        copyPopup.classList.add('show');
+        popupTimeout = setTimeout(() => copyPopup.classList.remove('show'), 1500);
+      }).catch(err => console.error('Copy failed:', err));
+    });
+
+    async function generateTree(handle) {
+      let dirs = 0, files = 0;
+      const lines = [handle.name + '/'];
+
+      async function recurse(currentHandle, indent) {
+          let entries = [];
+          try {
+              for await (const entry of currentHandle.values()) {
+                  if (!excluded.has(entry.name) && !(entry.name.startsWith('.') && currentHandle !== handle)) {
+                      entries.push(entry);
+                  }
+              }
+          } catch (err) { lines.push(`${indent}└── [Permission Denied]`); return; }
+
+          entries.sort((a, b) => a.kind === b.kind ? a.name.localeCompare(b.name) : (a.kind === 'directory' ? -1 : 1));
+
+          for (let i = 0; i < entries.length; i++) {
+              const entry = entries[i], isLast = i === entries.length - 1;
+              const prefix = indent + (isLast ? '└── ' : '├── ');
+              const nextIndent = indent + (isLast ? '    ' : '│   ');
+
+              if (entry.kind === 'directory') {
+                  dirs++; lines.push(`${prefix}${entry.name}/`);
+                  try {
+                      await recurse(await currentHandle.getDirectoryHandle(entry.name), nextIndent);
+                  } catch { lines.push(`${nextIndent}└── [Permission Denied]`); }
+              } else { files++; lines.push(`${prefix}${entry.name}`); }
+
+              if (i % 100 === 0) await new Promise(r => setTimeout(r, 0));
+          }
+      }
+      await recurse(handle, '');
+      return { lines, dirs, files };
+    }
+
+    selectBtn.addEventListener('click', () => {
+        toggleLoader(true);
+        setTimeout(async () => {
+            let result = null;
+            try {
+                if ('showDirectoryPicker' in window) {
+                    const handle = await window.showDirectoryPicker({ mode: 'read' });
+                    result = await generateTree(handle);
+                }
+            } catch (err) {
+                 if (err.name !== 'AbortError') console.error('Picker error:', err);
+            }
+
+            if (result) {
+                displayTree(result.lines, result.dirs, result.files);
+            } else {
+                fileInput.value = null;
+                fileInput.click();
+                 if (!('showDirectoryPicker' in window)) {
+                     alert('Using fallback file input.');
+                 }
+                 toggleLoader(false); // Hide loader if fallback started
+            }
+        }, 10);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) {
+             treeOutput.textContent = 'No directory/files selected.';
+             toggleLoader(false); // Ensure loader hidden if no files
+             return;
+        }
+
+        toggleLoader(true);
+        setTimeout(() => {
+            const rootName = files[0]?.webkitRelativePath.split('/')[0] || '[Root]';
+            const tree = {}; let fileCount = 0; const dirPaths = new Set();
+
+            files.forEach(file => {
+                const parts = file.webkitRelativePath.split('/');
+                if (parts.slice(1).some(p => excluded.has(p) || (p.startsWith('.') && p.length > 1))) return;
+
+                let current = tree;
+                for (let i = 1; i < parts.length; i++) {
+                    const part = parts[i]; const isLast = i === parts.length - 1;
+                    if (!isLast) { // Directory
+                        dirPaths.add(parts.slice(0, i + 1).join('/'));
+                        current[part] = current[part] || {};
+                        current = current[part];
+                    } else { fileCount++; current[part] = null; } // File
+                }
+            });
+
+            function flatten(obj, indent) {
+                const entries = Object.entries(obj).sort(([keyA, valA], [keyB, valB]) => {
+                    const typeA = valA === null ? 1 : 0;
+                    const typeB = valB === null ? 1 : 0;
+                    return typeA - typeB || keyA.localeCompare(keyB);
+                });
+                let lines = [];
+                entries.forEach(([name, value], i) => {
+                    const isLast = i === entries.length - 1;
+                    const prefix = indent + (isLast ? '└── ' : '├── ');
+                    if (value !== null) { // Directory
+                        lines.push(prefix + name + '/');
+                        lines.push(...flatten(value, indent + (isLast ? '    ' : '│   ')));
+                    } else { lines.push(prefix + name); } // File
+                });
+                return lines;
+            }
+
+            displayTree([rootName + '/'].concat(flatten(tree, '')), dirPaths.size, fileCount);
+        }, 10);
+    });
+
+  </script>
+</body>
+</html>
