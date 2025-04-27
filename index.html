@@ -12,7 +12,7 @@
       --radius: 0.5rem;
       --font-main: 'Segoe UI', sans-serif;
       --font-mono: 'Consolas', monospace;
-      --font-size-mono: 0.9rem; /* Default size */
+      --font-size-mono: 0.9rem;
 
       --popup-bg: #3c4261;
       --popup-fg: #f0f0f0;
@@ -79,21 +79,18 @@
     }
     pre {
       font-family: var(--font-mono);
-      font-size: var(--font-size-mono); /* Use variable */
+      font-size: var(--font-size-mono); 
       line-height: 1.4;
-      white-space: pre; /* Allow user selection/deletion */
+      white-space: pre; 
       overflow-x: auto;
-      /* Allow editing for deleting lines */
-      /* NOTE: Might need careful handling if more complex interaction is added later */
-      /* min-height: 5em; /* Ensure it has some height even when empty */
     }
     pre:focus {
-        outline: 1px solid var(--accent); /* Indicate focus when editing */
+        outline: 1px solid var(--accent);
     }
 
     .loader {
       border: 8px solid rgba(255,255,255,0.1);
-      border-top-color: var(--accent); /* Use shorthand */
+      border-top-color: var(--accent); 
       border-radius: 50%;
       width: 60px;
       height: 60px;
@@ -148,7 +145,6 @@
   </div>
   <div id="tree-container">
     <div class="loader" id="loader"></div>
-    <!-- Added contenteditable="true" -->
     <pre id="treeOutput" contenteditable="true" spellcheck="false">Select a directory...</pre>
   </div>
   <div id="copyPopup" class="popup">Copied!</div>
@@ -173,14 +169,14 @@
 
     const displayTree = (lines, dirs, files) => {
       loader.style.display = 'none';
-      treeOutput.textContent = lines.join('\n'); // Set text content
+      treeOutput.textContent = lines.join('\n'); 
       setCounts(dirs, files);
     };
 
     const toggleLoader = (show) => {
         loader.style.display = show ? 'block' : 'none';
         if (show) {
-            treeOutput.textContent = ''; // Clear content when loading
+            treeOutput.textContent = ''; 
             setCounts(0, 0);
         }
     };
@@ -190,7 +186,6 @@
     });
 
     copyBtn.addEventListener('click', () => {
-      // Always read textContent for copying, even if editable
       const text = treeOutput.textContent;
       if (!text || text === 'Select a directory...') return;
       navigator.clipboard.writeText(text).then(() => {
@@ -256,7 +251,7 @@
                  if (!('showDirectoryPicker' in window)) {
                      alert('Using fallback file input.');
                  }
-                 toggleLoader(false); // Hide loader if fallback started
+                 toggleLoader(false); 
             }
         }, 10);
     });
@@ -265,7 +260,7 @@
         const files = Array.from(e.target.files);
         if (files.length === 0) {
              treeOutput.textContent = 'No directory/files selected.';
-             toggleLoader(false); // Ensure loader hidden if no files
+             toggleLoader(false); 
              return;
         }
 
@@ -281,11 +276,11 @@
                 let current = tree;
                 for (let i = 1; i < parts.length; i++) {
                     const part = parts[i]; const isLast = i === parts.length - 1;
-                    if (!isLast) { // Directory
+                    if (!isLast) { 
                         dirPaths.add(parts.slice(0, i + 1).join('/'));
                         current[part] = current[part] || {};
                         current = current[part];
-                    } else { fileCount++; current[part] = null; } // File
+                    } else { fileCount++; current[part] = null; } 
                 }
             });
 
@@ -299,10 +294,10 @@
                 entries.forEach(([name, value], i) => {
                     const isLast = i === entries.length - 1;
                     const prefix = indent + (isLast ? '└── ' : '├── ');
-                    if (value !== null) { // Directory
+                    if (value !== null) { 
                         lines.push(prefix + name + '/');
                         lines.push(...flatten(value, indent + (isLast ? '    ' : '│   ')));
-                    } else { lines.push(prefix + name); } // File
+                    } else { lines.push(prefix + name); } 
                 });
                 return lines;
             }
